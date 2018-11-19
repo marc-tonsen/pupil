@@ -39,8 +39,6 @@ def get_transform_mat(param):
 
 
 def get_camera_pose_mat(camera_params):
-    if camera_params is None:
-        return None
     camera_pose_inv = get_transform_mat(camera_params.copy())
     camera_pose = np.linalg.inv(camera_pose_inv)
     return camera_pose

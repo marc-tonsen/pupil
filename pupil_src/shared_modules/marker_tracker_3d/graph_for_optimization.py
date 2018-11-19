@@ -1,6 +1,7 @@
 import itertools as it
 import logging
 import os
+import collections
 
 import networkx as nx
 import numpy as np
@@ -43,7 +44,7 @@ class GraphForOptimization(CameraModel):
         self.camera_keys_prv = list()
 
         self.camera_params_opt = dict()
-        self.marker_params_opt = dict()
+        self.marker_params_opt = collections.OrderedDict()
 
         self.data_for_optimization = None
         self.localization = None
@@ -145,7 +146,7 @@ class GraphForOptimization(CameraModel):
     def _decide_keyframe(self, candidate_markers, camera_params_loc):
         """
         decide if current_frame can be a keyframe
-        add "camera_params_loc" as a key in the self.keyframes[self.frame_id] dicts
+        add "previous_camera_extrinsics" as a key in the self.keyframes[self.frame_id] dicts
          """
 
         if len(candidate_markers) < self.min_number_of_markers_per_frame:
@@ -154,7 +155,7 @@ class GraphForOptimization(CameraModel):
         self.keyframes[self.frame_id] = {
             k: v for k, v in self.current_frame.items() if k in candidate_markers
         }
-        self.keyframes[self.frame_id]["camera_params_loc"] = camera_params_loc
+        self.keyframes[self.frame_id]["previous_camera_extrinsics"] = camera_params_loc
         logger.debug(
             "--> keyframe {0}; markers {1}".format(self.frame_id, candidate_markers)
         )
@@ -299,8 +300,10 @@ class GraphForOptimization(CameraModel):
         for i, k in enumerate(self.camera_keys):
             if k in self.camera_params_opt:
                 camera_params_prv[i] = self.camera_params_opt[k]
-            elif "camera_params_loc" in self.keyframes[k].keys():
-                camera_params_prv[i] = self.keyframes[k]["camera_params_loc"].ravel()
+            elif "previous_camera_extrinsics" in self.keyframes[k].keys():
+                camera_params_prv[i] = self.keyframes[k][
+                    "previous_camera_extrinsics"
+                ].ravel()
 
         marker_params_prv = {}
         for i, k in enumerate(self.marker_keys):
@@ -343,7 +346,7 @@ class GraphForOptimization(CameraModel):
                 )
                 marker_points_3d = self.params_to_points_3d(marker_params)
 
-                return self.marker_params_opt, marker_points_3d, self.first_node
+                return self.marker_params_opt, marker_points_3d
 
     def _update_params_opt(
         self, camera_params, marker_params, camera_index_failed, marker_index_failed
@@ -386,7 +389,7 @@ class GraphForOptimization(CameraModel):
         ]
         self.visibility_graph_of_all_markers.remove_edges_from(redundant_edges)
 
-        # remove the attribute "camera_params_loc" of the node
+        # remove the attribute "previous_camera_extrinsics" of the node
         for f_id in failed_keyframes:
             for n_id in set(n for n, _, f in redundant_edges if f == f_id) | set(
                 n for _, n, f in redundant_edges if f == f_id

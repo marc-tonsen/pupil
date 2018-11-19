@@ -63,5 +63,5 @@ def generator_optimization(recv_pipe):
                 lock, opt.result_opt_run
             )
             event_opt_not_running.set()
-            if isinstance(result, tuple) and len(result) == 3:
+            if result:
                 yield result

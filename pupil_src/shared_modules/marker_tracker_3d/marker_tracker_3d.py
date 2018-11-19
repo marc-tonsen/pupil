@@ -82,17 +82,17 @@ class Marker_Tracker_3D(Plugin):
         # for tracking
         self.send_data_interval = 6
         self.min_number_of_markers_per_frame_for_loc = 2
-        self.registering = True
+        self.register_new_markers = True
         self.markers_drawn_in_3d_window = list()
         self.markers = list()
         self.marker_model_3D = None
-        self.camera_pose = None
+        self.camera_pose_matrix = None
         self.camera_trace = collections.deque(maxlen=100)
-        self.camera_params_loc = None
+        self.previous_camera_extrinsics = None
         self.first_node = None
         self.frame_count = 0
         self.frame_count_last_send_data = 0
-        self.square_params_opt = dict()
+        self.square_params_opt = collections.OrderedDict()
 
         # background process
         recv_pipe, self.send_pipe = mp.Pipe(False)
@@ -166,18 +166,18 @@ class Marker_Tracker_3D(Plugin):
             )
         )
         self.menu.append(
-            ui.Switch("registering", self, label="Registering new markers")
+            ui.Switch("register_new_markers", self, label="Registering new markers")
         )
         self.menu.append(ui.Button("restart markers registration", self.restart))
-        if self.first_node is not None:
+        try:
             self.menu.append(
                 ui.Info_Text(
                     "The marker with id {} is defined as the origin of the coordinate system".format(
-                        self.first_node
+                        list(self.square_params_opt.keys())[0]
                     )
                 )
             )
-        else:
+        except IndexError:
             self.menu.append(
                 ui.Info_Text("The coordinate system has not yet been built up")
             )
@@ -228,13 +228,13 @@ class Marker_Tracker_3D(Plugin):
 
     def reset_parameters(self):
         # for tracking
-        self.registering = True
+        self.register_new_markers = True
         self.markers_drawn_in_3d_window = list()
         self.markers = list()
         self.marker_model_3D = None
-        self.camera_pose = None
+        self.camera_pose_matrix = None
         self.camera_trace = collections.deque(maxlen=100)
-        self.camera_params_loc = None
+        self.previous_camera_extrinsics = None
         self.first_node = None
         self.frame_count = 0
         self.frame_count_last_send_data = 0
@@ -254,65 +254,36 @@ class Marker_Tracker_3D(Plugin):
         return d
 
     def recent_events(self, events):
-        # Get current frame
         frame = events.get("frame")
         if not frame:
+            self.early_exit()
             return
 
-        self.fetch_data_from_bg_optimization()
-
+        self.fetch_marker_model_data_from_bg()
         self.markers = self.detect_and_filter_markers(frame)
 
         if len(self.markers) < self.min_number_of_markers_per_frame_for_loc:
-            self.camera_pose = None
-            if len(self.camera_trace):
-                self.camera_trace.popleft()
+            self.early_exit()
             return
 
-        if self.marker_model_3D is None:
-            if (
-                self.frame_count - self.frame_count_last_send_data
-                >= self.send_data_interval
-            ):
-                self.frame_count_last_send_data = self.frame_count
-                # if not registering, not send data
-                if self.registering:
-                    self.send_pipe.send(("frame", (self.markers, None)))
-        else:
-            camera_params_loc = self.marker_model_3D.current_camera(
-                self.markers, self.camera_params_loc
-            )
+        if self.marker_model_3D is not None:
+            self.update_camera_extrinsics()
 
-            if isinstance(camera_params_loc, np.ndarray):
-                self.camera_params_loc = camera_params_loc
-                self.camera_pose = marker_tracker_3d.math.get_camera_pose_mat(
-                    self.camera_params_loc
-                )
-                self.camera_trace.append(self.camera_pose[0:3, 3])
-                self.camera_trace_all.append(self.camera_pose[0:3, 3])
-
-                # send current_frame through pipe
-                if self.frame_count - self.frame_count_last_send_data >= 5:
-                    self.frame_count_last_send_data = self.frame_count
-                    # if not registering, not send data
-                    if self.registering:
-                        self.send_pipe.send(
-                            ("frame", (self.markers, camera_params_loc))
-                        )
-            else:
-                self.camera_pose = None
-                self.camera_trace.append(None)
-                self.camera_trace_all.append(None)
+        self.send_marker_data_to_bg(camera_extrinsics=self.previous_camera_extrinsics)
 
         self.frame_count += 1
 
-    def fetch_data_from_bg_optimization(self):
-        for data in self.bg_task.fetch():
-            assert isinstance(data, tuple) and len(data) == 3
-            # TODO delete assertion
-            self.square_params_opt, self.markers_drawn_in_3d_window, first_node = data
-            if self.first_node is None:
-                self.first_node = first_node
+    def early_exit(self):
+        self.camera_pose_matrix = None
+        if len(self.camera_trace):
+            self.camera_trace.popleft()
+
+    def fetch_marker_model_data_from_bg(self):
+        for (
+            self.square_params_opt,
+            self.markers_drawn_in_3d_window,
+        ) in self.bg_task.fetch():
+            if self.square_params_opt:
                 self.update_menu()
 
             try:
@@ -326,6 +297,15 @@ class Marker_Tracker_3D(Plugin):
                 )
             )
 
+    def send_marker_data_to_bg(self, camera_extrinsics):
+        if (
+            self.frame_count - self.frame_count_last_send_data
+            >= self.send_data_interval
+        ):
+            self.frame_count_last_send_data = self.frame_count
+            if self.register_new_markers:
+                self.send_pipe.send(("frame", (self.markers, camera_extrinsics)))
+
     def detect_and_filter_markers(self, frame):
         # not use detect_markers_robust to avoid cv2.calcOpticalFlowPyrLK for
         # performance reasons
@@ -337,6 +317,25 @@ class Marker_Tracker_3D(Plugin):
         )
         markers_dict = utils.filter_markers(markers)
         return markers_dict
+
+    def update_camera_extrinsics(self):
+        camera_extrinsics = self.marker_model_3D.current_camera(
+            self.markers, self.previous_camera_extrinsics
+        )
+        if camera_extrinsics is None:
+            # Do not set previous_camera_extrinsics to None to ensure a decent initial
+            # guess for the next solve_pnp call
+            self.camera_pose_matrix = None
+            self.camera_trace.append(None)
+            self.camera_trace_all.append(None)
+        else:
+            self.previous_camera_extrinsics = camera_extrinsics
+
+            self.camera_pose_matrix = marker_tracker_3d.math.get_camera_pose_mat(
+                camera_extrinsics
+            )
+            self.camera_trace.append(self.camera_pose_matrix[0:3, 3])
+            self.camera_trace_all.append(self.camera_pose_matrix[0:3, 3])
 
     def gl_display(self):
         for m in self.markers.values():
@@ -403,9 +402,9 @@ class Marker_Tracker_3D(Plugin):
                 draw_camera_trace(self.camera_trace)
 
             # Draw the camera frustum and origin
-            if self.camera_pose is not None:
+            if self.camera_pose_matrix is not None:
                 glPushMatrix()
-                glMultMatrixf(self.camera_pose.T.flatten())
+                glMultMatrixf(self.camera_pose_matrix.T.flatten())
                 draw_frustum(img_size, K, 500)
                 glLineWidth(1)
                 draw_coordinate_system(l=1)
