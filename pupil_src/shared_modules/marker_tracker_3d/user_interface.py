@@ -11,6 +11,9 @@ import gl_utils
 import glfw
 import square_marker_detect
 
+from marker_tracker_3d import utils
+from marker_tracker_3d import math
+
 logger = logging.getLogger(__name__)
 
 
@@ -144,10 +147,13 @@ class UserInterface:
             self.draw_coordinate_system(l=1)
 
             # Draw registered markers
-            for verts, idx in zip(
-                self.marker_tracker_3d.markers_drawn_in_3d_window,
-                self.marker_tracker_3d.marker_model_3d.marker_extrinsics.keys(),
-            ):
+            for (
+                idx,
+                extrinsics,
+            ) in self.marker_tracker_3d.marker_model_3d.marker_extrinsics.items():
+                verts = utils.get_marker_vertex_coord(
+                    extrinsics, self.marker_tracker_3d.camera_model
+                )
                 if idx in self.marker_tracker_3d.markers.keys():
                     color = (1, 0, 0, 0.8)
                 else:
@@ -161,9 +167,12 @@ class UserInterface:
                 self.draw_camera_trace(self.marker_tracker_3d.camera_trace)
 
             # Draw the camera frustum and origin
-            if self.marker_tracker_3d.camera_pose_matrix is not None:
+            if self.marker_tracker_3d.camera_extrinsics is not None:
+                camera_pose_matrix = math.get_camera_pose_mat(
+                    self.marker_tracker_3d.camera_extrinsics
+                )
                 gl.glPushMatrix()
-                gl.glMultMatrixf(self.marker_tracker_3d.camera_pose_matrix.T.flatten())
+                gl.glMultMatrixf(camera_pose_matrix.T.flatten())
                 self.draw_frustum(img_size, K, 500)
                 gl.glLineWidth(1)
                 self.draw_coordinate_system(l=1)

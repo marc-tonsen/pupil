@@ -341,12 +341,8 @@ class GraphForOptimization(CameraModel):
                 self._discard_keyframes(camera_index_failed)
 
                 self.camera_keys_prv = self.camera_keys.copy()
-                marker_extrinsics = np.array(
-                    [self.marker_extrinsics_opt[k] for k in self.marker_keys_optimized]
-                )
-                marker_points_3d = self.params_to_points_3d(marker_extrinsics)
 
-                return self.marker_extrinsics_opt, marker_points_3d
+                return self.marker_extrinsics_opt
 
     def _update_params_opt(
         self, camera_params, marker_extrinsics, camera_index_failed, marker_index_failed

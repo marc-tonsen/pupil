@@ -24,6 +24,7 @@ import marker_tracker_3d.utils
 from marker_tracker_3d.marker_detector import MarkerDetector
 from marker_tracker_3d.marker_model_3d import CameraLocalizer
 from marker_tracker_3d.user_interface import UserInterface
+from marker_tracker_3d.camera_model import CameraModel
 from plugin import Plugin
 
 logger = logging.getLogger(__name__)
@@ -43,16 +44,16 @@ class Marker_Tracker_3D(Plugin):
 
         self.marker_detector = MarkerDetector()
         self.ui = UserInterface(self, open_3d_window)
+        self.camera_model = CameraModel()
 
         # for tracking
         self.send_data_interval = 6
         self.min_number_of_markers_per_frame_for_loc = 2
         self.register_new_markers = True
-        self.markers_drawn_in_3d_window = list()
         self.markers = {}
         self.marker_model_3d = CameraLocalizer()
-        self.camera_pose_matrix = None
         self.camera_trace = collections.deque(maxlen=100)
+        self.camera_extrinsics = None
         self.previous_camera_extrinsics = None
         self.first_node = None
         self.frame_count = 0
@@ -132,10 +133,8 @@ class Marker_Tracker_3D(Plugin):
     def reset_parameters(self):
         # for tracking
         self.register_new_markers = True
-        self.markers_drawn_in_3d_window = list()
         self.markers = list()
         self.marker_model_3d = None
-        self.camera_pose_matrix = None
         self.camera_trace = collections.deque(maxlen=100)
         self.previous_camera_extrinsics = None
         self.first_node = None
@@ -174,15 +173,11 @@ class Marker_Tracker_3D(Plugin):
         self.frame_count += 1
 
     def early_exit(self):
-        self.camera_pose_matrix = None
         if len(self.camera_trace):
             self.camera_trace.popleft()
 
     def fetch_marker_model_data_from_bg(self):
-        for (
-            marker_extrinsics,
-            self.markers_drawn_in_3d_window,
-        ) in self.bg_task.fetch():
+        for marker_extrinsics in self.bg_task.fetch():
             if marker_extrinsics:
                 self.ui.update_menu()
 
@@ -207,23 +202,22 @@ class Marker_Tracker_3D(Plugin):
                 self.send_pipe.send(("frame", (self.markers, camera_extrinsics)))
 
     def update_camera_extrinsics(self):
-        camera_extrinsics = self.marker_model_3d.current_camera(
+        self.camera_extrinsics = self.marker_model_3d.current_camera(
             self.markers, self.previous_camera_extrinsics
         )
-        if camera_extrinsics is None:
+        if self.camera_extrinsics is None:
             # Do not set previous_camera_extrinsics to None to ensure a decent initial
             # guess for the next solve_pnp call
-            self.camera_pose_matrix = None
             self.camera_trace.append(None)
             self.camera_trace_all.append(None)
         else:
-            self.previous_camera_extrinsics = camera_extrinsics
+            self.previous_camera_extrinsics = self.camera_extrinsics
 
-            self.camera_pose_matrix = marker_tracker_3d.math.get_camera_pose_mat(
-                camera_extrinsics
+            camera_pose_matrix = marker_tracker_3d.math.get_camera_pose_mat(
+                self.camera_extrinsics
             )
-            self.camera_trace.append(self.camera_pose_matrix[0:3, 3])
-            self.camera_trace_all.append(self.camera_pose_matrix[0:3, 3])
+            self.camera_trace.append(camera_pose_matrix[0:3, 3])
+            self.camera_trace_all.append(camera_pose_matrix[0:3, 3])
 
     def gl_display(self):
         self.ui.gl_display(

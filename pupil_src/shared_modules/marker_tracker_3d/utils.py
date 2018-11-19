@@ -8,6 +8,13 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def get_marker_vertex_coord(marker_extrinsics, camera_model):
+    marker_extrinsics = np.array(marker_extrinsics)
+    marker_points_3d = camera_model.params_to_points_3d(marker_extrinsics)
+    marker_points_3d.shape = 4, 3
+    return marker_points_3d
+
+
 def split_param(param):
     assert param.size == 6
     return param.ravel()[0:3], param.ravel()[3:6]
