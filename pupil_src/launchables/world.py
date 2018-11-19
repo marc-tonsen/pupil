@@ -147,7 +147,7 @@ def world(
         from pupil_remote import Pupil_Remote
         from pupil_groups import Pupil_Groups
         from surface_tracker import Surface_Tracker
-        from marker_tracker_3d import Marker_Tracker_3D
+        from marker_tracker_3d.marker_tracker_3d import Marker_Tracker_3D
         from log_display import Log_Display
         from annotations import Annotation_Capture
         from log_history import Log_History

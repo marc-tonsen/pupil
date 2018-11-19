@@ -218,7 +218,7 @@ class Surface_Tracker(Plugin):
         self.menu.append(
             ui.Slider("min_marker_perimeter", self, step=1, min=30, max=100)
         )
-        self.menu.append(ui.Switch("locate_3d", self, label="3D localization"))
+        self.menu.append(ui.Switch("locate_3d", self, label="3D marker_model_3D"))
         self.menu.append(
             ui.Selector(
                 "mode",

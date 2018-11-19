@@ -119,7 +119,7 @@ class UNet(nn.Module):
     The U-Net is a convolutional encoder-decoder neural network.
     Contextual spatial information (from the decoding,
     expansive pathway) about an input tensor is merged with
-    information representing the localization of details
+    information representing the marker_model_3D of details
     (from the encoding, compressive pathway).
 
     Modifications to the original paper:
