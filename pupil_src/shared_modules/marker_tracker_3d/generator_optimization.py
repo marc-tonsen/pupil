@@ -35,7 +35,7 @@ def generator_optimization(recv_pipe):
             # for experiments
             elif msg == "save":
                 dicts = {
-                    "marker_params_opt": graph_for_optimization.marker_params_opt,
+                    "marker_extrinsics_opt": graph_for_optimization.marker_extrinsics_opt,
                     "camera_params_opt": graph_for_optimization.camera_params_opt,
                 }
                 save_path = data_recv

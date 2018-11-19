@@ -43,8 +43,8 @@ class CameraModel:
         )
         self.marker_df_h = cv2.convertPointsToHomogeneous(self.marker_df).reshape(4, 4)
         self.n_camera_params = 6
-        self.n_marker_params = 6
-        self.marker_params_origin = self.point_3d_to_param(self.marker_df)
+        self.n_marker_extrinsics = 6
+        self.marker_extrinsics_origin = self.point_3d_to_param(self.marker_df)
 
     def project_markers(self, camera_params, markers_points_3d):
         camera_params = camera_params.reshape(-1, self.n_camera_params).copy()
@@ -61,7 +61,7 @@ class CameraModel:
         return markers_points_2d_projected
 
     def params_to_points_3d(self, params):
-        params = np.asarray(params).reshape(-1, self.n_marker_params)
+        params = np.asarray(params).reshape(-1, self.n_marker_extrinsics)
         marker_points_3d = list()
         for param in params:
             rvec, tvec = split_param(param)
@@ -81,20 +81,20 @@ class CameraModel:
         R, L, RMSE = svdt(A=self.marker_df, B=marker_points_3d)
         rvec = cv2.Rodrigues(R)[0]
         tvec = L
-        marker_params = merge_param(rvec, tvec)
-        return marker_params
+        marker_extrinsics = merge_param(rvec, tvec)
+        return marker_extrinsics
 
     def cal_cost(
         self,
         camera_params,
-        marker_params,
+        marker_extrinsics,
         camera_indices,
         marker_indices,
         markers_points_2d_detected,
     ):
         residuals = self.cal_proj_error(
             camera_params,
-            marker_params,
+            marker_extrinsics,
             camera_indices,
             marker_indices,
             markers_points_2d_detected,
@@ -105,12 +105,12 @@ class CameraModel:
     def cal_proj_error(
         self,
         camera_params,
-        marker_params,
+        marker_extrinsics,
         camera_indices,
         marker_indices,
         markers_points_2d_detected,
     ):
-        markers_points_3d = self.params_to_points_3d(marker_params.reshape(-1, 6))
+        markers_points_3d = self.params_to_points_3d(marker_extrinsics.reshape(-1, 6))
         markers_points_2d_projected = self.project_markers(
             camera_params[camera_indices], markers_points_3d[marker_indices]
         )

@@ -7,7 +7,7 @@ import networkx as nx
 import numpy as np
 
 from marker_tracker_3d.camera_model import CameraModel
-from marker_tracker_3d.marker_model_3d import MarkerModel3D
+from marker_tracker_3d.marker_model_3d import CameraLocalizer
 from marker_tracker_3d.math import closest_angle_diff
 from marker_tracker_3d.utils import split_param
 
@@ -44,7 +44,7 @@ class GraphForOptimization(CameraModel):
         self.camera_keys_prv = list()
 
         self.camera_params_opt = dict()
-        self.marker_params_opt = collections.OrderedDict()
+        self.marker_extrinsics_opt = collections.OrderedDict()
 
         self.data_for_optimization = None
         self.localization = None
@@ -107,10 +107,10 @@ class GraphForOptimization(CameraModel):
         else:
             self.first_node = list(self.current_frame.keys())[0]
 
-        self.marker_params_opt = {self.first_node: self.marker_params_origin}
+        self.marker_extrinsics_opt = {self.first_node: self.marker_extrinsics_origin}
         self.marker_keys = [self.first_node]
-        # initialize self.marker_model_3D for _predict_camera_pose
-        self.localization = MarkerModel3D(self.marker_params_opt)
+        # initialize self.marker_model_3d for _predict_camera_pose
+        self.localization = CameraLocalizer(self.marker_extrinsics_opt)
         return True
 
     def _predict_camera_pose(self):
@@ -305,17 +305,17 @@ class GraphForOptimization(CameraModel):
                     "previous_camera_extrinsics"
                 ].ravel()
 
-        marker_params_prv = {}
+        marker_extrinsics_prv = {}
         for i, k in enumerate(self.marker_keys):
-            if k in self.marker_params_opt:
-                marker_params_prv[i] = self.marker_params_opt[k]
+            if k in self.marker_extrinsics_opt:
+                marker_extrinsics_prv[i] = self.marker_extrinsics_opt[k]
 
         data_for_optimization = (
             camera_indices,
             marker_indices,
             markers_points_2d_detected,
             camera_params_prv,
-            marker_params_prv,
+            marker_extrinsics_prv,
         )
 
         return data_for_optimization
@@ -326,13 +326,13 @@ class GraphForOptimization(CameraModel):
         with lock:
             if isinstance(result_opt_run, dict) and len(result_opt_run) == 4:
                 camera_params_opt = result_opt_run["camera_params_opt"]
-                marker_params_opt = result_opt_run["marker_params_opt"]
+                marker_extrinsics_opt = result_opt_run["marker_extrinsics_opt"]
                 camera_index_failed = result_opt_run["camera_index_failed"]
                 marker_index_failed = result_opt_run["marker_index_failed"]
 
                 self._update_params_opt(
                     camera_params_opt,
-                    marker_params_opt,
+                    marker_extrinsics_opt,
                     camera_index_failed,
                     marker_index_failed,
                 )
@@ -341,26 +341,26 @@ class GraphForOptimization(CameraModel):
                 self._discard_keyframes(camera_index_failed)
 
                 self.camera_keys_prv = self.camera_keys.copy()
-                marker_params = np.array(
-                    [self.marker_params_opt[k] for k in self.marker_keys_optimized]
+                marker_extrinsics = np.array(
+                    [self.marker_extrinsics_opt[k] for k in self.marker_keys_optimized]
                 )
-                marker_points_3d = self.params_to_points_3d(marker_params)
+                marker_points_3d = self.params_to_points_3d(marker_extrinsics)
 
-                return self.marker_params_opt, marker_points_3d
+                return self.marker_extrinsics_opt, marker_points_3d
 
     def _update_params_opt(
-        self, camera_params, marker_params, camera_index_failed, marker_index_failed
+        self, camera_params, marker_extrinsics, camera_index_failed, marker_index_failed
     ):
         for i, p in enumerate(camera_params):
             if i not in camera_index_failed:
                 self.camera_params_opt[self.camera_keys[i]] = p
-        for i, p in enumerate(marker_params):
+        for i, p in enumerate(marker_extrinsics):
             if i not in marker_index_failed:
-                self.marker_params_opt[self.marker_keys[i]] = p
-        logger.debug("update {}".format(self.marker_params_opt.keys()))
+                self.marker_extrinsics_opt[self.marker_keys[i]] = p
+        logger.debug("update {}".format(self.marker_extrinsics_opt.keys()))
 
         for k in self.marker_keys:
-            if k not in self.marker_keys_optimized and k in self.marker_params_opt:
+            if k not in self.marker_keys_optimized and k in self.marker_extrinsics_opt:
                 self.marker_keys_optimized.append(k)
         logger.debug("self.marker_keys_optimized {}".format(self.marker_keys_optimized))
 
@@ -396,7 +396,9 @@ class GraphForOptimization(CameraModel):
             ):
                 del self.visibility_graph_of_all_markers.nodes[n_id][f_id]
 
-        fail_marker_keys = set(self.marker_keys) - set(self.marker_params_opt.keys())
+        fail_marker_keys = set(self.marker_keys) - set(
+            self.marker_extrinsics_opt.keys()
+        )
         for k in fail_marker_keys:
             self.marker_keys.remove(k)
         logger.debug("remove from marker_keys: {}".format(fail_marker_keys))

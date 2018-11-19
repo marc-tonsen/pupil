@@ -4,27 +4,30 @@ from marker_tracker_3d.utils import merge_param, check_camera_param
 from marker_tracker_3d.camera_model import CameraModel
 
 
-class MarkerModel3D(CameraModel):
-    def __init__(self, marker_params_opt):
+class CameraLocalizer(CameraModel):
+    def __init__(self, marker_extrinsics=None):
         super().__init__()
-        self.marker_params_opt = marker_params_opt
+        if marker_extrinsics is None:
+            self.marker_extrinsics = {}
+        else:
+            self.marker_extrinsics = marker_extrinsics
 
     @property
-    def marker_params_opt(self):
-        return self.__marker_params_opt
+    def marker_extrinsics(self):
+        return self.__marker_extrinsics
 
-    @marker_params_opt.setter
-    def marker_params_opt(self, marker_params_new):
-        assert isinstance(marker_params_new, dict)
-        self.__marker_params_opt = marker_params_new
+    @marker_extrinsics.setter
+    def marker_extrinsics(self, marker_extrinsics_new):
+        assert isinstance(marker_extrinsics_new, dict)
+        self.__marker_extrinsics = marker_extrinsics_new
 
     def prepare_data_for_localization(self, current_frame):
         marker_keys_available = current_frame.keys() & set(
-            self.marker_params_opt.keys()
+            self.marker_extrinsics.keys()
         )
 
         marker_points_3d_for_loc = self.params_to_points_3d(
-            [self.marker_params_opt[i] for i in marker_keys_available]
+            [self.marker_extrinsics[i] for i in marker_keys_available]
         )
         marker_points_2d_for_loc = np.array(
             [current_frame[i]["verts"] for i in marker_keys_available]
