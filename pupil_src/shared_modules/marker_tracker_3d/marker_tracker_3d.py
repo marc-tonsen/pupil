@@ -35,6 +35,8 @@ from marker_tracker_3d import utils
 from marker_tracker_3d.marker_model_3d import MarkerModel3D
 from plugin import Plugin
 
+from marker_tracker_3d.marker_detector import MarkerDetector
+
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.NOTSET)
 
@@ -47,18 +49,13 @@ class Marker_Tracker_3D(Plugin):
     icon_chr = chr(0xEC07)
     icon_font = "pupil_icons"
 
-    def __init__(
-        self,
-        g_pool,
-        open_3d_window=True,
-        min_id_confidence=0.9,
-        min_marker_perimeter=100,
-    ):
+    def __init__(self, g_pool, open_3d_window=True):
         super().__init__(g_pool)
+
+        self.marker_detector = MarkerDetector()
+
         # for UI menu
         self.open_3d_window = open_3d_window
-        self.min_id_confidence = min_id_confidence
-        self.min_marker_perimeter = min_marker_perimeter
 
         self.name = "Marker Tracker 3D"
 
@@ -140,21 +137,11 @@ class Marker_Tracker_3D(Plugin):
         self.menu.append(
             ui.Slider(
                 "min_marker_perimeter",
-                self,
+                self.marker_detector,
                 step=1,
                 min=30,
                 max=100,
                 label="Perimeter of markers",
-            )
-        )
-        self.menu.append(
-            ui.Slider(
-                "min_id_confidence",
-                self,
-                step=0.05,
-                min=0,
-                max=1,
-                label="Confidence of marker detection",
             )
         )
         self.menu.append(
@@ -260,7 +247,7 @@ class Marker_Tracker_3D(Plugin):
             return
 
         self.fetch_marker_model_data_from_bg()
-        self.markers = self.detect_and_filter_markers(frame)
+        self.markers = self.marker_detector.detect(frame)
 
         if len(self.markers) < self.min_number_of_markers_per_frame_for_loc:
             self.early_exit()
@@ -306,18 +293,6 @@ class Marker_Tracker_3D(Plugin):
             if self.register_new_markers:
                 self.send_pipe.send(("frame", (self.markers, camera_extrinsics)))
 
-    def detect_and_filter_markers(self, frame):
-        # not use detect_markers_robust to avoid cv2.calcOpticalFlowPyrLK for
-        # performance reasons
-        markers = square_marker_detect.detect_markers(
-            frame.gray,
-            grid_size=5,
-            aperture=13,
-            min_marker_perimeter=self.min_marker_perimeter,
-        )
-        markers_dict = utils.filter_markers(markers)
-        return markers_dict
-
     def update_camera_extrinsics(self):
         camera_extrinsics = self.marker_model_3D.current_camera(
             self.markers, self.previous_camera_extrinsics
@@ -345,18 +320,12 @@ class Marker_Tracker_3D(Plugin):
             hat = cv2.perspectiveTransform(
                 hat, square_marker_detect.m_marker_to_screen(m)
             )
-            if (
-                m["perimeter"] >= self.min_marker_perimeter
-                and m["id_confidence"] > self.min_id_confidence
-            ):
-                draw_polyline(hat.reshape((6, 2)), color=RGBA(0.1, 1.0, 1.0, 0.5))
-                draw_polyline(
-                    hat.reshape((6, 2)),
-                    color=RGBA(0.1, 1.0, 1.0, 0.3),
-                    line_type=GL_POLYGON,
-                )
-            else:
-                draw_polyline(hat.reshape((6, 2)), color=RGBA(0.1, 1.0, 1.0, 0.5))
+            draw_polyline(hat.reshape((6, 2)), color=RGBA(0.1, 1.0, 1.0, 0.5))
+            draw_polyline(
+                hat.reshape((6, 2)),
+                color=RGBA(0.1, 1.0, 1.0, 0.3),
+                line_type=GL_POLYGON,
+            )
 
         # 3D debug visualization
         self.gl_display_in_window_3d(self.g_pool.image_tex)

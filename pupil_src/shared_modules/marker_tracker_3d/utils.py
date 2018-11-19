@@ -8,44 +8,6 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def filter_markers(markers):
-    markers = [m for m in markers if m["id_confidence"] > 0.9]
-
-    markers_id_all = set([m["id"] for m in markers])
-    for marker_id in markers_id_all:
-        markers_with_same_id = [m for m in markers if m["id"] == marker_id]
-        if len(markers_with_same_id) > 2:
-            markers = [m for m in markers if m["id"] != marker_id]
-            logger.warning(
-                "WARNING! Multiple markers with same id {} found!".format(marker_id)
-            )
-        elif len(markers_with_same_id) == 2:
-            markers = _remove_duplicate(marker_id, markers, markers_with_same_id)
-
-    marker_dict = {m["id"]: {k: v for k, v in m.items() if k != "id"} for m in markers}
-
-    return marker_dict
-
-
-def _remove_duplicate(m_id, markers, markers_with_same_id):
-    dist = np.linalg.norm(
-        np.array(markers_with_same_id[0]["centroid"])
-        - np.array(markers_with_same_id[1]["centroid"])
-    )
-    # If two markers are very close, pick the bigger one. It may due to double detection
-    if dist < 3:
-        marker_small = min(markers_with_same_id, key=lambda x: x["perimeter"])
-        markers = [
-            m
-            for m in markers
-            if not (m["id"] == m_id and m["centroid"] == marker_small["centroid"])
-        ]
-    else:
-        markers = [m for m in markers if m["id"] != m_id]
-        logger.warning("WARNING! Multiple markers with same id {} found!".format(m_id))
-    return markers
-
-
 def split_param(param):
     assert param.size == 6
     return param.ravel()[0:3], param.ravel()[3:6]
