@@ -18,7 +18,8 @@ logger = logging.getLogger(__name__)
 
 
 class UserInterface:
-    def __init__(self, marker_tracker_3d, open_3d_window):
+    def __init__(self, marker_tracker_3d, open_3d_window, storage):
+        self.storage = storage
         self.marker_tracker_3d = marker_tracker_3d
         self.open_3d_window = open_3d_window
 
@@ -81,9 +82,7 @@ class UserInterface:
         )
         self.menu.append(
             ui.Switch(
-                "register_new_markers",
-                self.marker_tracker_3d,
-                label="Registering new markers",
+                "register_new_markers", self.storage, label="Registering new markers"
             )
         )
         self.menu.append(
@@ -113,7 +112,7 @@ class UserInterface:
         )  # TODO external ref
 
     def gl_display(self, K, img_size):
-        for m in self.marker_tracker_3d.markers.values():
+        for m in self.storage.markers.values():
             hat = np.array(
                 [[[0, 0], [0, 1], [0.5, 1.3], [1, 1], [1, 0], [0, 0]]], dtype=np.float32
             )
@@ -147,14 +146,11 @@ class UserInterface:
             self.draw_coordinate_system(l=1)
 
             # Draw registered markers
-            for (
-                idx,
-                extrinsics,
-            ) in self.marker_tracker_3d.marker_model_3d.marker_extrinsics.items():
+            for (idx, extrinsics) in self.storage.marker_extrinsics.items():
                 verts = utils.get_marker_vertex_coord(
                     extrinsics, self.marker_tracker_3d.camera_model
                 )
-                if idx in self.marker_tracker_3d.markers.keys():
+                if idx in self.storage.markers.keys():
                     color = (1, 0, 0, 0.8)
                 else:
                     color = (1, 0.4, 0, 0.6)
@@ -163,13 +159,13 @@ class UserInterface:
                 gl.glPopMatrix()
 
             # Draw camera trace
-            if len(self.marker_tracker_3d.camera_trace):
-                self.draw_camera_trace(self.marker_tracker_3d.camera_trace)
+            if len(self.storage.camera_trace):
+                self.draw_camera_trace(self.storage.camera_trace)
 
             # Draw the camera frustum and origin
-            if self.marker_tracker_3d.camera_extrinsics is not None:
+            if self.storage.camera_extrinsics is not None:
                 camera_pose_matrix = math.get_camera_pose_mat(
-                    self.marker_tracker_3d.camera_extrinsics
+                    self.storage.camera_extrinsics
                 )
                 gl.glPushMatrix()
                 gl.glMultMatrixf(camera_pose_matrix.T.flatten())

@@ -7,14 +7,14 @@ import networkx as nx
 import numpy as np
 
 from marker_tracker_3d.camera_model import CameraModel
-from marker_tracker_3d.marker_model_3d import CameraLocalizer
+from marker_tracker_3d.camera_localizer import CameraLocalizer
 from marker_tracker_3d.math import closest_angle_diff
 from marker_tracker_3d.utils import split_param
 
 logger = logging.getLogger(__name__)
 
 
-class GraphForOptimization(CameraModel):
+class VisibilityGraphs(CameraModel):
     def __init__(
         self,
         first_node_id=None,

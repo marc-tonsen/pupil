@@ -8,7 +8,8 @@ logger = logging.getLogger(__name__)
 
 
 class MarkerDetector:
-    def __init__(self):
+    def __init__(self, storage):
+        self.storage = storage
         self.min_marker_perimeter = 100
 
     def detect(self, frame):
@@ -21,7 +22,7 @@ class MarkerDetector:
             min_marker_perimeter=self.min_marker_perimeter,
         )
         markers_dict = self._filter_markers(markers)
-        return markers_dict
+        self.storage.markers = markers_dict
 
     def _filter_markers(self, markers):
         markers_id_all = set([m["id"] for m in markers])

@@ -17,14 +17,14 @@ import os
 
 import numpy as np
 
-import background_helper as bh
-import marker_tracker_3d.generator_optimization
 import marker_tracker_3d.math
 import marker_tracker_3d.utils
 from marker_tracker_3d.marker_detector import MarkerDetector
-from marker_tracker_3d.marker_model_3d import CameraLocalizer
+from marker_tracker_3d.camera_localizer import CameraLocalizer
 from marker_tracker_3d.user_interface import UserInterface
 from marker_tracker_3d.camera_model import CameraModel
+from marker_tracker_3d import optimization
+from marker_tracker_3d.storage import Storage
 from plugin import Plugin
 
 logger = logging.getLogger(__name__)
@@ -42,31 +42,18 @@ class Marker_Tracker_3D(Plugin):
     def __init__(self, g_pool, open_3d_window=True):
         super().__init__(g_pool)
 
-        self.marker_detector = MarkerDetector()
-        self.ui = UserInterface(self, open_3d_window)
+        self.storage = Storage()
+
+        self.marker_detector = MarkerDetector(self.storage)
+        self.ui = UserInterface(self, open_3d_window, self.storage)
         self.camera_model = CameraModel()
+        self.optimization_controller = optimization.Controller(
+            self.storage, self.ui.update_menu
+        )
 
         # for tracking
-        self.send_data_interval = 6
         self.min_number_of_markers_per_frame_for_loc = 2
-        self.register_new_markers = True
-        self.markers = {}
         self.marker_model_3d = CameraLocalizer()
-        self.camera_trace = collections.deque(maxlen=100)
-        self.camera_extrinsics = None
-        self.previous_camera_extrinsics = None
-        self.first_node = None
-        self.frame_count = 0
-        self.frame_count_last_send_data = 0
-
-        # background process
-        recv_pipe, self.send_pipe = mp.Pipe(False)
-        generator_args = (recv_pipe,)
-        self.bg_task = bh.IPC_Logging_Task_Proxy(
-            name="generator_optimization",
-            generator=marker_tracker_3d.generator_optimization.generator_optimization,
-            args=generator_args,
-        )
 
         # for experiments
         now = datetime.datetime.now()
@@ -81,7 +68,6 @@ class Marker_Tracker_3D(Plugin):
             "/cluster/users/Ching/experiments/marker_tracker_3d", now_str
         )
         self.robustness = list()
-        self.camera_trace_all = list()
         self.all_frames = list()
         self.reprojection_errors = list()
 
@@ -137,7 +123,6 @@ class Marker_Tracker_3D(Plugin):
         self.marker_model_3d = None
         self.camera_trace = collections.deque(maxlen=100)
         self.previous_camera_extrinsics = None
-        self.first_node = None
         self.frame_count = 0
         self.frame_count_last_send_data = 0
 
@@ -158,66 +143,41 @@ class Marker_Tracker_3D(Plugin):
             self.early_exit()
             return
 
-        self.fetch_marker_model_data_from_bg()
-        self.markers = self.marker_detector.detect(frame)
+        self.marker_detector.detect(frame)
+        self.optimization_controller.fetch_extrinsics()
 
-        if len(self.markers) < self.min_number_of_markers_per_frame_for_loc:
+        if len(self.storage.markers) < self.min_number_of_markers_per_frame_for_loc:
             self.early_exit()
             return
 
         if self.marker_model_3d is not None:
             self.update_camera_extrinsics()
 
-        self.send_marker_data_to_bg(camera_extrinsics=self.previous_camera_extrinsics)
+        self.optimization_controller.send_marker_data()
 
-        self.frame_count += 1
-
+    # TODO by now this is doing so little, maybe we should rename it to
+    # pop_camera_trace or something similar
     def early_exit(self):
-        if len(self.camera_trace):
-            self.camera_trace.popleft()
-
-    def fetch_marker_model_data_from_bg(self):
-        for marker_extrinsics in self.bg_task.fetch():
-            if marker_extrinsics:
-                self.ui.update_menu()
-
-            try:
-                self.marker_model_3d.marker_extrinsics = marker_extrinsics
-            except AttributeError:
-                self.marker_model_3d = CameraLocalizer(marker_extrinsics)
-
-            logger.info(
-                "{} markers have been registered and updated".format(
-                    len(marker_extrinsics)
-                )
-            )
-
-    def send_marker_data_to_bg(self, camera_extrinsics):
-        if (
-            self.frame_count - self.frame_count_last_send_data
-            >= self.send_data_interval
-        ):
-            self.frame_count_last_send_data = self.frame_count
-            if self.register_new_markers:
-                self.send_pipe.send(("frame", (self.markers, camera_extrinsics)))
+        if len(self.storage.camera_trace):
+            self.storage.camera_trace.popleft()
 
     def update_camera_extrinsics(self):
-        self.camera_extrinsics = self.marker_model_3d.current_camera(
-            self.markers, self.previous_camera_extrinsics
+        self.storage.camera_extrinsics = self.marker_model_3d.current_camera(
+            self.storage.markers, self.storage.previous_camera_extrinsics
         )
-        if self.camera_extrinsics is None:
+        if self.storage.camera_extrinsics is None:
             # Do not set previous_camera_extrinsics to None to ensure a decent initial
             # guess for the next solve_pnp call
-            self.camera_trace.append(None)
-            self.camera_trace_all.append(None)
+            self.storage.camera_trace.append(None)
+            self.storage.camera_trace_all.append(None)
         else:
-            self.previous_camera_extrinsics = self.camera_extrinsics
+            self.storage.previous_camera_extrinsics = self.storage.camera_extrinsics
 
             camera_pose_matrix = marker_tracker_3d.math.get_camera_pose_mat(
-                self.camera_extrinsics
+                self.storage.camera_extrinsics
             )
-            self.camera_trace.append(camera_pose_matrix[0:3, 3])
-            self.camera_trace_all.append(camera_pose_matrix[0:3, 3])
+            self.storage.camera_trace.append(camera_pose_matrix[0:3, 3])
+            self.storage.camera_trace_all.append(camera_pose_matrix[0:3, 3])
 
     def gl_display(self):
         self.ui.gl_display(

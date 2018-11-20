@@ -1,15 +1,13 @@
 import threading
 
-from marker_tracker_3d.graph_for_optimization import GraphForOptimization
-from marker_tracker_3d.optimization import Optimization
+from marker_tracker_3d.optimization.visibility_graphs import VisibilityGraphs
+from marker_tracker_3d.optimization.optimization import Optimization
 from marker_tracker_3d.utils import save_params_dicts
 
 
-def generator_optimization(recv_pipe):
-    """ background process """
-
+def optimization_generator(recv_pipe):
     first_node_id = None
-    graph_for_optimization = GraphForOptimization(first_node_id=first_node_id)
+    graph_for_optimization = VisibilityGraphs(first_node_id=first_node_id)
     event_opt_done = threading.Event()
     event_opt_not_running = threading.Event()
     event_opt_not_running.set()
@@ -24,9 +22,7 @@ def generator_optimization(recv_pipe):
                 )
 
             elif msg == "restart":
-                graph_for_optimization = GraphForOptimization(
-                    first_node_id=first_node_id
-                )
+                graph_for_optimization = VisibilityGraphs(first_node_id=first_node_id)
                 event_opt_done = threading.Event()
                 event_opt_not_running = threading.Event()
                 event_opt_not_running.set()
